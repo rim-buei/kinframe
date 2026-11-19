@@ -11,6 +11,8 @@ import (
 )
 
 // FSStore stores objects on the local filesystem (local/dev smoke without AWS).
+// Glacier is simulated with sidecar marker files so originals become unreadable
+// while thumbs/previews stay available.
 type FSStore struct {
 	root string
 }
@@ -40,7 +42,25 @@ func (s *FSStore) resolve(key string) (string, error) {
 	return full, nil
 }
 
-// Put writes an object to disk.
+func (s *FSStore) classPath(full string) string { return full + ".storage_class" }
+
+func (s *FSStore) readClass(full string) string {
+	b, err := os.ReadFile(s.classPath(full))
+	if err != nil {
+		return ClassStandard
+	}
+	return strings.TrimSpace(string(b))
+}
+
+func (s *FSStore) writeClass(full, class string) error {
+	if class == "" || class == ClassStandard {
+		_ = os.Remove(s.classPath(full))
+		return nil
+	}
+	return os.WriteFile(s.classPath(full), []byte(class+"\n"), 0o644)
+}
+
+// Put writes an object to disk (and clears any archive marker).
 func (s *FSStore) Put(_ context.Context, key string, body io.Reader, _ string) error {
 	full, err := s.resolve(key)
 	if err != nil {
@@ -64,14 +84,21 @@ func (s *FSStore) Put(_ context.Context, key string, body io.Reader, _ string) e
 		_ = os.Remove(tmp)
 		return closeErr
 	}
-	return os.Rename(tmp, full)
+	if err := os.Rename(tmp, full); err != nil {
+		return err
+	}
+	_ = s.writeClass(full, ClassStandard)
+	return nil
 }
 
-// Get opens an object for reading.
+// Get opens an object for reading. Archived originals return ErrObjectArchived.
 func (s *FSStore) Get(_ context.Context, key string) (io.ReadCloser, error) {
 	full, err := s.resolve(key)
 	if err != nil {
 		return nil, err
+	}
+	if s.readClass(full) == ClassGlacier {
+		return nil, ErrObjectArchived
 	}
 	return os.Open(full)
 }
@@ -82,6 +109,7 @@ func (s *FSStore) Delete(_ context.Context, key string) error {
 	if err != nil {
 		return err
 	}
+	_ = os.Remove(s.classPath(full))
 	err = os.Remove(full)
 	if os.IsNotExist(err) {
 		return nil
@@ -99,15 +127,46 @@ func (s *FSStore) PresignGet(context.Context, string, time.Duration) (string, er
 	return "", fmt.Errorf("filesystem store does not support presigned GET; fetch via the app API")
 }
 
-// TransitionStorageClass is a Glacier hook; no-op on filesystem.
-func (s *FSStore) TransitionStorageClass(context.Context, string, string) error {
-	return nil
+// TransitionStorageClass simulates Glacier by marking the object archived (or warm).
+func (s *FSStore) TransitionStorageClass(_ context.Context, key string, storageClass string) error {
+	full, err := s.resolve(key)
+	if err != nil {
+		return err
+	}
+	if _, err := os.Stat(full); err != nil {
+		return err
+	}
+	switch strings.ToUpper(storageClass) {
+	case ClassGlacier, "GLACIER_IR", "DEEP_ARCHIVE":
+		return s.writeClass(full, ClassGlacier)
+	case ClassStandard, "STANDARD_IA", "":
+		return s.writeClass(full, ClassStandard)
+	default:
+		return s.writeClass(full, storageClass)
+	}
 }
 
-// RestoreObject is a Glacier hook; no-op on filesystem.
-func (s *FSStore) RestoreObject(context.Context, string, int, string) error {
-	return nil
+// RestoreObject simulates an immediate Glacier restore (dev/smoke).
+func (s *FSStore) RestoreObject(_ context.Context, key string, _ int, _ string) error {
+	full, err := s.resolve(key)
+	if err != nil {
+		return err
+	}
+	if _, err := os.Stat(full); err != nil {
+		return err
+	}
+	// Instant restore for local smoke: clear archive marker.
+	return s.writeClass(full, ClassStandard)
 }
 
 // Root returns the filesystem root (tests / diagnostics).
 func (s *FSStore) Root() string { return s.root }
+
+// StorageClassOf returns the simulated class for a key (tests).
+func (s *FSStore) StorageClassOf(key string) (string, error) {
+	full, err := s.resolve(key)
+	if err != nil {
+		return "", err
+	}
+	return s.readClass(full), nil
+}

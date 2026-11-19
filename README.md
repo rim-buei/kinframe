@@ -2,7 +2,7 @@
 
 Self-hosted family photo sharing. Spaces, albums, and media with optional **album-level Glacier archive/restore**, SSO (Google / Apple), and community **theme packs**.
 
-This repository is early MVP: SQLite, Docker Compose (Caddy + app + worker), **Google / Apple OIDC + encrypted cookie sessions**, **Spaces / memberships / invite links**, **albums + media upload** (filesystem object store for local/dev), and Glacier job stubs (not wired yet).
+This repository is early MVP: SQLite, Docker Compose (Caddy + app + worker), **Google / Apple OIDC + encrypted cookie sessions**, **Spaces / memberships / invite links**, **albums + media upload**, and **album-level Glacier archive/restore** (filesystem simulates archive for local smoke; S3 uses Flexible Retrieval).
 
 ## Stack (approved)
 
@@ -12,7 +12,8 @@ This repository is early MVP: SQLite, Docker Compose (Caddy + app + worker), **G
 | HTTP | chi |
 | DB | SQLite (WAL) + goose migrations |
 | Proxy | Caddy |
-| Storage | `ObjectStore` — local **filesystem** backend for dev; S3 SDK later; Glacier via worker jobs (sketched) |
+| Storage | `ObjectStore` — local **filesystem** (archive simulated) or **S3** (Glacier Flexible Retrieval) |
+| Jobs | SQLite `jobs` + worker (`album_archive` / `album_restore`) |
 | Auth | OIDC (Google / Apple) + encrypted HTTP-only cookie sessions |
 | Themes | Packs under `themes/` (Liquid / css-only) |
 
@@ -69,14 +70,16 @@ export DATABASE_PATH=./data/app.db
 export THEMES_DIR=./themes
 export PUBLIC_BASE_URL=http://localhost:8080
 go run ./cmd/kinframe app
-# 1) /login → Dev login → create a space → create album → upload a JPEG → delete
-# 2) Optional: Dev login as guest + invite accept (memberships smoke)
+# Terminal A: app    Terminal B: worker (same env + DATABASE_PATH/STORAGE_PATH)
+go run ./cmd/kinframe worker
+# Dev login → space → album → upload JPEG → Archive to Glacier → thumbs still work
+# → Restore from Glacier → original readable again
 ```
 
 Unit tests (no IdP / AWS credentials):
 
 ```bash
-go test ./internal/auth/... ./internal/space/... ./internal/media/... ./internal/storage/...
+go test ./internal/auth/... ./internal/space/... ./internal/media/... ./internal/storage/... ./internal/jobs/...
 ```
 
 ## Run locally without Compose

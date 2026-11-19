@@ -36,10 +36,11 @@ const (
 
 // Common errors.
 var (
-	ErrNotFound      = errors.New("not found")
-	ErrForbiddenEdit = errors.New("album not editable in current archive state")
-	ErrTooLarge      = errors.New("file exceeds upload limit")
-	ErrAlbumLimit    = errors.New("album capacity exceeded")
+	ErrNotFound         = errors.New("not found")
+	ErrForbiddenEdit    = errors.New("album not editable in current archive state")
+	ErrTooLarge         = errors.New("file exceeds upload limit")
+	ErrAlbumLimit       = errors.New("album capacity exceeded")
+	ErrOriginalArchived = errors.New("original is archived; use thumb or preview")
 )
 
 // Album is a media collection inside a space.
@@ -377,11 +378,43 @@ UPDATE media SET deleted_at = datetime('now') WHERE id = ?
 	return err
 }
 
+// ListOriginalKeys returns object keys for non-deleted originals in an album.
+func (s *Store) ListOriginalKeys(ctx context.Context, albumID string) ([]string, error) {
+	rows, err := s.db.QueryContext(ctx, `
+SELECT original_key FROM media WHERE album_id = ? AND deleted_at IS NULL ORDER BY created_at ASC
+`, albumID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var keys []string
+	for rows.Next() {
+		var k string
+		if err := rows.Scan(&k); err != nil {
+			return nil, err
+		}
+		keys = append(keys, k)
+	}
+	return keys, rows.Err()
+}
+
 // OpenObject returns a reader for original/thumb/preview.
+// Thumbnails and previews remain readable while originals are archived.
 func (s *Store) OpenObject(ctx context.Context, item MediaItem, kind string) (io.ReadCloser, string, error) {
 	switch kind {
 	case "original", "":
-		return open(ctx, s.objects, item.OriginalKey, item.ContentType)
+		album, err := s.GetAlbum(ctx, item.AlbumID)
+		if err != nil {
+			return nil, "", err
+		}
+		if album.ArchiveState == ArchiveGlacier || album.ArchiveState == ArchiveArchiving || album.ArchiveState == ArchiveRestoring {
+			return nil, "", ErrOriginalArchived
+		}
+		rc, ct, err := open(ctx, s.objects, item.OriginalKey, item.ContentType)
+		if errors.Is(err, storage.ErrObjectArchived) {
+			return nil, "", ErrOriginalArchived
+		}
+		return rc, ct, err
 	case "thumb":
 		if item.ThumbKey == "" {
 			return nil, "", ErrNotFound

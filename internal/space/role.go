@@ -78,3 +78,8 @@ func (r Role) CanCreateInvite() bool {
 func (r Role) CanEditContent() bool {
 	return r.AtLeast(RoleEditor)
 }
+
+// CanArchive is true for owner and admin (Glacier archive/restore).
+func (r Role) CanArchive() bool {
+	return r.AtLeast(RoleAdmin)
+}

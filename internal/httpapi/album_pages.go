@@ -50,11 +50,25 @@ var albumPageTmpl = template.Must(template.New("album").Parse(`<!DOCTYPE html>
 <main>
   <nav><a href="/spaces/{{.SpaceSlug}}">← {{.SpaceName}}</a> · {{.DisplayName}} · <a href="/auth/logout">Log out</a></nav>
   <h1>{{.Album.Title}}</h1>
-  <p class="meta">archive <strong>{{.Album.ArchiveState}}</strong>{{if .Album.Description}} · {{.Album.Description}}{{end}}</p>
+  <p class="meta">state <strong>{{.StateLabel}}</strong> ({{.Album.ArchiveState}}){{if .Album.Description}} · {{.Album.Description}}{{end}}</p>
   {{if .Flash}}<p class="ok">{{.Flash}}</p>{{end}}
   {{if .Error}}<p class="err">{{.Error}}</p>{{end}}
 
-  {{if .CanEdit}}
+  {{if .CanArchive}}
+  <div style="margin:0 0 1.25rem;display:flex;gap:0.5rem;flex-wrap:wrap">
+    {{if eq .Album.ArchiveState "hot"}}
+    <form method="post" action="/albums/{{.Album.ID}}/archive"><button type="submit">Archive to Glacier</button></form>
+    {{end}}
+    {{if eq .Album.ArchiveState "glacier"}}
+    <form method="post" action="/albums/{{.Album.ID}}/restore"><button type="submit">Restore from Glacier</button></form>
+    {{end}}
+    {{if or (eq .Album.ArchiveState "archiving") (eq .Album.ArchiveState "restoring")}}
+    <p class="meta">Job in progress… refresh for updates. Thumbnails stay available.</p>
+    {{end}}
+  </div>
+  {{end}}
+
+  {{if and .CanEdit (eq .Album.ArchiveState "hot")}}
   <form class="upload" method="post" action="/albums/{{.Album.ID}}/upload" enctype="multipart/form-data">
     <input type="file" name="file" accept="image/*,video/*" required>
     <button type="submit">Upload</button>
@@ -114,9 +128,26 @@ func (s *Server) handleAlbumPage(w http.ResponseWriter, r *http.Request) {
 		"SpaceSlug":   sp.Slug,
 		"SpaceName":   sp.Name,
 		"CanEdit":     m.Role.CanEditContent(),
+		"CanArchive":  m.Role.CanArchive(),
+		"StateLabel":  archiveStateLabel(al.ArchiveState),
 		"Flash":       r.URL.Query().Get("flash"),
 		"Error":       r.URL.Query().Get("error"),
 	})
+}
+
+func archiveStateLabel(st media.ArchiveState) string {
+	switch st {
+	case media.ArchiveHot:
+		return "warm"
+	case media.ArchiveArchiving:
+		return "archiving"
+	case media.ArchiveGlacier:
+		return "archived"
+	case media.ArchiveRestoring:
+		return "restoring"
+	default:
+		return string(st)
+	}
 }
 
 func (s *Server) handleAlbumUploadForm(w http.ResponseWriter, r *http.Request) {

@@ -39,7 +39,7 @@ func run() error {
 	}
 
 	if cmd == "version" {
-		fmt.Println("kinframe 0.3.0-media")
+		fmt.Println("kinframe 0.4.0-glacier")
 		return nil
 	}
 
@@ -86,7 +86,7 @@ func run() error {
 		logger.Info("starting app", "addr", cfg.HTTPAddr, "public_base_url", cfg.PublicBaseURL, "storage", backendLabel)
 		return srv.ListenAndServe(ctx)
 	case "worker":
-		w := jobs.NewWorker(cfg, database, logger)
+		w := jobs.NewWorker(cfg, database, logger, objects)
 		logger.Info("starting worker", "storage", backendLabel)
 		return w.Run(ctx)
 	default:

@@ -54,6 +54,8 @@ func writeMediaErr(w http.ResponseWriter, err error) {
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "forbidden"})
 	case errors.Is(err, media.ErrForbiddenEdit):
 		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
+	case errors.Is(err, media.ErrOriginalArchived):
+		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
 	case errors.Is(err, media.ErrTooLarge):
 		writeJSON(w, http.StatusRequestEntityTooLarge, map[string]string{"error": err.Error()})
 	case errors.Is(err, media.ErrAlbumLimit):

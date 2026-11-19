@@ -17,6 +17,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/rim-buei/kinframe/internal/auth"
 	"github.com/rim-buei/kinframe/internal/config"
+	"github.com/rim-buei/kinframe/internal/jobs"
 	"github.com/rim-buei/kinframe/internal/media"
 	"github.com/rim-buei/kinframe/internal/space"
 	"github.com/rim-buei/kinframe/internal/storage"
@@ -33,6 +34,7 @@ type Server struct {
 	oidc     auth.OIDCClient
 	spaces   *space.Store
 	media    *media.Store
+	jobs     *jobs.Queue
 	objects  storage.ObjectStore
 }
 
@@ -46,6 +48,7 @@ func NewServer(cfg config.Config, db *sql.DB, logger *slog.Logger, oidc auth.OID
 		sealer:  sealer,
 		spaces:  space.NewStore(db),
 		media:   media.NewStore(db, objects, cfg.MaxUploadBytes),
+		jobs:    jobs.NewQueue(db),
 		objects: objects,
 	}
 	if sealer != nil {
@@ -74,6 +77,8 @@ func NewServer(cfg config.Config, db *sql.DB, logger *slog.Logger, oidc auth.OID
 	r.Post("/albums/{albumID}/upload", s.handleAlbumUploadForm)
 	r.Post("/albums/{albumID}/media/{mediaID}/delete", s.handleAlbumDeleteMediaForm)
 	r.Post("/albums/{albumID}/delete", s.handleAlbumDeleteForm)
+	r.Post("/albums/{albumID}/archive", s.handleAlbumArchiveForm)
+	r.Post("/albums/{albumID}/restore", s.handleAlbumRestoreForm)
 
 	r.Get("/invite/{token}", s.handleInvitePage)
 	r.Post("/invite/{token}/accept", s.handleInviteAcceptForm)
@@ -114,8 +119,11 @@ func NewServer(cfg config.Config, db *sql.DB, logger *slog.Logger, oidc auth.OID
 		r.Delete("/albums/{albumID}", s.handleDeleteAlbum)
 		r.Get("/albums/{albumID}/media", s.handleListMedia)
 		r.Post("/albums/{albumID}/media", s.handleUploadMedia)
+		r.Post("/albums/{albumID}/archive", s.handleArchiveAlbum)
+		r.Post("/albums/{albumID}/restore", s.handleRestoreAlbum)
 		r.Delete("/media/{mediaID}", s.handleDeleteMedia)
 		r.Get("/media/{mediaID}/file", s.handleMediaFile)
+		r.Get("/jobs/{jobID}", s.handleGetJob)
 	})
 
 	s.http = &http.Server{
@@ -161,7 +169,7 @@ func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleAPIRoot(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"name":    "kinframe",
-		"version": "0.3.0-media",
+		"version": "0.4.0-glacier",
 		"auth": map[string]bool{
 			"google": s.oidc != nil && s.oidc.Configured(auth.ProviderGoogle),
 			"apple":  s.oidc != nil && s.oidc.Configured(auth.ProviderApple),
