@@ -16,10 +16,11 @@ const stateTTL = 10 * time.Minute
 
 // OIDCState is the CSRF payload sealed into a short-lived cookie during login start.
 type OIDCState struct {
-	Nonce     string   `json:"n"`
-	Provider  Provider `json:"p"`
-	IssuedAt  int64    `json:"iat"`
-	ReturnTo  string   `json:"rt,omitempty"`
+	Nonce      string   `json:"n"`
+	Provider   Provider `json:"p"`
+	IssuedAt   int64    `json:"iat"`
+	ReturnTo   string   `json:"rt,omitempty"`
+	DevPersona string   `json:"dp,omitempty"` // DEV_FAKE_OIDC only: "dev" | "guest"
 }
 
 // NewOIDCState creates a fresh state for provider.

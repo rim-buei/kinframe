@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"strings"
 
 	"github.com/rim-buei/kinframe/internal/config"
 )
@@ -58,13 +59,7 @@ func (f *FakeOIDC) Exchange(ctx context.Context, provider Provider, code string,
 		if code != fakeAuthCode {
 			return Identity{}, fmt.Errorf("invalid fake auth code")
 		}
-		return Identity{
-			Provider:        ProviderGoogle, // store as google-shaped row for schema CHECK
-			ProviderSubject: "dev-fake-subject",
-			Email:           "dev@localhost",
-			DisplayName:     "Dev User",
-			AvatarURL:       "",
-		}, nil
+		return DevIdentity("dev"), nil
 	}
 	if f.inner != nil {
 		return f.inner.Exchange(ctx, provider, code, form)
@@ -72,5 +67,24 @@ func (f *FakeOIDC) Exchange(ctx context.Context, provider Provider, code string,
 	return Identity{}, ErrNotConfigured
 }
 
-// Note: FakeOIDC maps the "dev" login button to ProviderDev in routes, but persists
-// the account as provider=google with a stable fake subject so the DB CHECK constraint holds.
+// DevIdentity returns a stable fake identity for local smoke tests.
+// persona "guest" is a second account for invite-accept smoke; anything else is the primary "dev" user.
+// Identities are stored as provider=google so the accounts CHECK constraint holds.
+func DevIdentity(persona string) Identity {
+	switch strings.ToLower(strings.TrimSpace(persona)) {
+	case "guest":
+		return Identity{
+			Provider:        ProviderGoogle,
+			ProviderSubject: "dev-fake-guest",
+			Email:           "guest@localhost",
+			DisplayName:     "Guest User",
+		}
+	default:
+		return Identity{
+			Provider:        ProviderGoogle,
+			ProviderSubject: "dev-fake-subject",
+			Email:           "dev@localhost",
+			DisplayName:     "Dev User",
+		}
+	}
+}

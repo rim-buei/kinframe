@@ -3,7 +3,6 @@ package httpapi
 import (
 	"crypto/subtle"
 	"errors"
-	"html"
 	"html/template"
 	"net/http"
 	"net/url"
@@ -43,9 +42,12 @@ var loginPageTmpl = template.Must(template.New("login").Parse(`<!DOCTYPE html>
     <p class="lead">Family albums via Google or Apple. No passwords.</p>
     {{if .Error}}<p class="err">{{.Error}}</p>{{end}}
     <div class="actions">
-      {{if .Google}}<a href="/auth/login/google">Continue with Google</a>{{end}}
-      {{if .Apple}}<a href="/auth/login/apple">Continue with Apple</a>{{end}}
-      {{if .Dev}}<a href="/auth/login/dev">Dev login (local only)</a>{{end}}
+      {{if .Google}}<a href="/auth/login/google{{.ReturnQuery}}">Continue with Google</a>{{end}}
+      {{if .Apple}}<a href="/auth/login/apple{{.ReturnQuery}}">Continue with Apple</a>{{end}}
+      {{if .Dev}}
+        <a href="/auth/login/dev{{.ReturnQuery}}">Dev login (local only)</a>
+        <a href="/auth/login/dev?as=guest{{if .ReturnTo}}&amp;return_to={{.ReturnTo}}{{end}}">Dev login as guest</a>
+      {{end}}
     </div>
     {{if not .Any}}<p class="muted">No SSO providers configured. Set Google/Apple client credentials, or DEV_FAKE_OIDC=1 for local smoke tests.</p>{{end}}
   </main>
@@ -53,23 +55,34 @@ var loginPageTmpl = template.Must(template.New("login").Parse(`<!DOCTYPE html>
 </html>`))
 
 type loginPageData struct {
-	Google bool
-	Apple  bool
-	Dev    bool
-	Any    bool
-	Error  string
+	Google      bool
+	Apple       bool
+	Dev         bool
+	Any         bool
+	Error       string
+	ReturnTo    string
+	ReturnQuery string
 }
 
 func (s *Server) handleLoginPage(w http.ResponseWriter, r *http.Request) {
+	returnTo := sanitizeReturnTo(r.URL.Query().Get("return_to"))
 	if _, ok := auth.AccountFromContext(r.Context()); ok {
-		http.Redirect(w, r, "/", http.StatusFound)
+		dest := returnTo
+		if dest == "" {
+			dest = "/"
+		}
+		http.Redirect(w, r, dest, http.StatusFound)
 		return
 	}
 	d := loginPageData{
-		Google: s.oidc != nil && s.oidc.Configured(auth.ProviderGoogle),
-		Apple:  s.oidc != nil && s.oidc.Configured(auth.ProviderApple),
-		Dev:    s.oidc != nil && s.oidc.Configured(auth.ProviderDev),
-		Error:  r.URL.Query().Get("error"),
+		Google:   s.oidc != nil && s.oidc.Configured(auth.ProviderGoogle),
+		Apple:    s.oidc != nil && s.oidc.Configured(auth.ProviderApple),
+		Dev:      s.oidc != nil && s.oidc.Configured(auth.ProviderDev),
+		Error:    r.URL.Query().Get("error"),
+		ReturnTo: url.QueryEscape(returnTo),
+	}
+	if returnTo != "" {
+		d.ReturnQuery = "?return_to=" + url.QueryEscape(returnTo)
 	}
 	d.Any = d.Google || d.Apple || d.Dev
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -96,6 +109,12 @@ func (s *Server) handleAuthStart(w http.ResponseWriter, r *http.Request) {
 		s.logger.Error("oidc state", "err", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
+	}
+	if provider == auth.ProviderDev {
+		st.DevPersona = strings.TrimSpace(r.URL.Query().Get("as"))
+		if st.DevPersona == "" {
+			st.DevPersona = "dev"
+		}
 	}
 	sealed, err := auth.SealState(s.sealer, st)
 	if err != nil {
@@ -162,6 +181,9 @@ func (s *Server) handleAuthCallback(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/login?error="+url.QueryEscape("sign-in failed"), http.StatusFound)
 		return
 	}
+	if provider == auth.ProviderDev {
+		ident = auth.DevIdentity(st.DevPersona)
+	}
 
 	account, err := auth.UpsertAccount(r.Context(), s.db, ident)
 	if err != nil {
@@ -202,24 +224,6 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 		"display_name": a.DisplayName,
 		"avatar_url":   a.AvatarURL,
 	})
-}
-
-func (s *Server) handleHome(w http.ResponseWriter, r *http.Request) {
-	a, ok := auth.AccountFromContext(r.Context())
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if !ok {
-		http.Redirect(w, r, "/login", http.StatusFound)
-		return
-	}
-	_, _ = w.Write([]byte(`<!DOCTYPE html>
-<html lang="en"><head><meta charset="utf-8"><title>kinframe</title>
-<link rel="stylesheet" href="/themes/default/static/styles.css">
-<style>main{max-width:40rem;margin:0 auto;padding:3rem 1.25rem}nav{margin-bottom:2rem}</style>
-</head><body><main>
-<nav><strong>kinframe</strong> · signed in as ` + html.EscapeString(a.DisplayName) + ` · <a href="/auth/logout">Log out</a></nav>
-<p>Spaces and albums come next. Session auth is live.</p>
-<p><a href="/api/me">/api/me</a></p>
-</main></body></html>`))
 }
 
 func sanitizeReturnTo(v string) string {

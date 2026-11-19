@@ -2,7 +2,7 @@
 
 Self-hosted family photo sharing. Spaces, albums, and media with optional **album-level Glacier archive/restore**, SSO (Google / Apple), and community **theme packs**.
 
-This repository is early MVP: SQLite, Docker Compose (Caddy + app + worker), **Google / Apple OIDC + encrypted cookie sessions**, and stubs for S3 / Glacier jobs.
+This repository is early MVP: SQLite, Docker Compose (Caddy + app + worker), **Google / Apple OIDC + encrypted cookie sessions**, **Spaces / memberships / invite links**, and stubs for S3 / Glacier jobs.
 
 ## Stack (approved)
 
@@ -53,7 +53,7 @@ Register these redirect URIs with the IdP:
 - `{PUBLIC_BASE_URL}/auth/callback/google`
 - `{PUBLIC_BASE_URL}/auth/callback/apple`
 
-Routes: `/login`, `/auth/login/{provider}`, `/auth/callback/{provider}`, `/auth/logout`, `/api/me`.
+Routes: `/login`, `/auth/login/{provider}`, `/auth/callback/{provider}`, `/auth/logout`, `/`, `/spaces/{slug}`, `/invite/{token}`, `/api/me`, `/api/spaces`, …
 
 ### Smoke test without Google/Apple
 
@@ -64,13 +64,15 @@ export DATABASE_PATH=./data/app.db
 export THEMES_DIR=./themes
 export PUBLIC_BASE_URL=http://localhost:8080
 go run ./cmd/kinframe app
-# Browser: http://localhost:8080/login → Dev login → /api/me
+# 1) /login → Dev login → create a space → Create invite
+# 2) Log out → Dev login as guest → open invite URL → Accept
+# 3) Or: curl API with session cookie after fake login
 ```
 
 Unit tests (no IdP credentials):
 
 ```bash
-go test ./internal/auth/...
+go test ./internal/auth/... ./internal/space/...
 ```
 
 ## Run locally without Compose

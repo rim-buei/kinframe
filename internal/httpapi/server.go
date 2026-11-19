@@ -17,6 +17,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/rim-buei/kinframe/internal/auth"
 	"github.com/rim-buei/kinframe/internal/config"
+	"github.com/rim-buei/kinframe/internal/space"
 )
 
 // Server is the HTTP app.
@@ -28,11 +29,19 @@ type Server struct {
 	sealer   *auth.Sealer
 	sessions *auth.SessionManager
 	oidc     auth.OIDCClient
+	spaces   *space.Store
 }
 
-// NewServer builds a chi router with health, auth, and placeholder API routes.
+// NewServer builds a chi router with health, auth, spaces, and API routes.
 func NewServer(cfg config.Config, db *sql.DB, logger *slog.Logger, oidc auth.OIDCClient, sealer *auth.Sealer) (*Server, error) {
-	s := &Server{cfg: cfg, db: db, logger: logger, oidc: oidc, sealer: sealer}
+	s := &Server{
+		cfg:    cfg,
+		db:     db,
+		logger: logger,
+		oidc:   oidc,
+		sealer: sealer,
+		spaces: space.NewStore(db),
+	}
 	if sealer != nil {
 		s.sessions = auth.NewSessionManager(db, sealer, cfg.SessionTTL, cfg.CookieSecure())
 	}
@@ -47,12 +56,20 @@ func NewServer(cfg config.Config, db *sql.DB, logger *slog.Logger, oidc auth.OID
 	}
 
 	r.Get("/healthz", s.handleHealthz)
-	r.Get("/", s.handleHome)
-	r.Get("/login", s.handleLoginPage)
 
+	r.Get("/", s.handleSpacesHome)
+	r.Post("/spaces", s.handleSpacesHome)
+	r.Get("/spaces/{spaceID}", s.handleSpacePage)
+	r.Post("/spaces/{spaceID}/invites", s.handleSpaceCreateInviteForm)
+	r.Post("/spaces/{spaceID}/invites/{inviteID}/revoke", s.handleSpaceRevokeInviteForm)
+
+	r.Get("/invite/{token}", s.handleInvitePage)
+	r.Post("/invite/{token}/accept", s.handleInviteAcceptForm)
+
+	r.Get("/login", s.handleLoginPage)
 	r.Get("/auth/login/{provider}", s.handleAuthStart)
 	r.Get("/auth/callback/{provider}", s.handleAuthCallback)
-	r.Post("/auth/callback/{provider}", s.handleAuthCallback) // Apple form_post
+	r.Post("/auth/callback/{provider}", s.handleAuthCallback)
 	r.Get("/auth/logout", s.handleLogout)
 	r.Post("/auth/logout", s.handleLogout)
 
@@ -61,9 +78,23 @@ func NewServer(cfg config.Config, db *sql.DB, logger *slog.Logger, oidc auth.OID
 	r.Route("/api", func(r chi.Router) {
 		r.Get("/", s.handleAPIRoot)
 		r.Get("/me", s.handleMe)
-		// Placeholder routes — wired in later phases.
-		r.Get("/spaces", s.notImplemented("list spaces"))
-		r.Post("/spaces", s.notImplemented("create space"))
+
+		r.Get("/spaces", s.handleListSpaces)
+		r.Post("/spaces", s.handleCreateSpace)
+		r.Get("/spaces/{spaceID}", s.handleGetSpace)
+		r.Patch("/spaces/{spaceID}", s.handleUpdateSpace)
+		r.Delete("/spaces/{spaceID}", s.handleDeleteSpace)
+
+		r.Get("/spaces/{spaceID}/members", s.handleListMembers)
+		r.Patch("/spaces/{spaceID}/members/{accountID}", s.handleUpdateMember)
+		r.Delete("/spaces/{spaceID}/members/{accountID}", s.handleRemoveMember)
+
+		r.Get("/spaces/{spaceID}/invites", s.handleListInvites)
+		r.Post("/spaces/{spaceID}/invites", s.handleCreateInvite)
+		r.Delete("/spaces/{spaceID}/invites/{inviteID}", s.handleRevokeInvite)
+
+		r.Post("/invites/accept", s.handleAcceptInviteAPI)
+
 		r.Get("/albums", s.notImplemented("list albums"))
 	})
 
@@ -110,7 +141,7 @@ func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleAPIRoot(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"name":    "kinframe",
-		"version": "0.1.0-auth",
+		"version": "0.2.0-spaces",
 		"auth": map[string]bool{
 			"google": s.oidc != nil && s.oidc.Configured(auth.ProviderGoogle),
 			"apple":  s.oidc != nil && s.oidc.Configured(auth.ProviderApple),
@@ -162,8 +193,6 @@ func BuildOIDC(ctx context.Context, cfg config.Config, logger *slog.Logger) (aut
 	if needDiscovery {
 		c, err := auth.NewOIDC(ctx, cfg)
 		if err != nil {
-			// Allow boot without network when only DEV_FAKE_OIDC is intended,
-			// but surface real config errors when credentials are set.
 			if !cfg.DevFakeOIDC {
 				return nil, err
 			}
@@ -177,13 +206,12 @@ func BuildOIDC(ctx context.Context, cfg config.Config, logger *slog.Logger) (aut
 		return auth.NewFakeOIDC(cfg, real), nil
 	}
 	if real == nil {
-		// Empty client that reports nothing configured.
 		return auth.NewOIDCEmpty(), nil
 	}
 	return real, nil
 }
 
-// Ensure SESSION_SECRET is present when serving auth cookies.
+// RequireSessionSecret ensures SESSION_SECRET is present when serving auth cookies.
 func RequireSessionSecret(cfg config.Config) (*auth.Sealer, error) {
 	if cfg.SessionSecret == "" {
 		return nil, fmt.Errorf("SESSION_SECRET is required (set a long random string in the environment)")

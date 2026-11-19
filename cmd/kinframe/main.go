@@ -38,7 +38,7 @@ func run() error {
 	}
 
 	if cmd == "version" {
-		fmt.Println("kinframe 0.1.0-auth")
+		fmt.Println("kinframe 0.2.0-spaces")
 		return nil
 	}
 
