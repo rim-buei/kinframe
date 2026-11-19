@@ -25,7 +25,7 @@ func main() {
 
 func run() error {
 	fs := flag.NewFlagSet(os.Args[0], flag.ExitOnError)
-	cfgPath := fs.String("config", "", "optional path to config file (unused in scaffold)")
+	cfgPath := fs.String("config", "", "optional path to config file (unused)")
 	_ = cfgPath
 	if err := fs.Parse(os.Args[1:]); err != nil {
 		return err
@@ -35,6 +35,11 @@ func run() error {
 	cmd := "app"
 	if len(args) > 0 {
 		cmd = args[0]
+	}
+
+	if cmd == "version" {
+		fmt.Println("kinframe 0.1.0-auth")
+		return nil
 	}
 
 	cfg, err := config.Load()
@@ -60,16 +65,24 @@ func run() error {
 
 	switch cmd {
 	case "app":
-		srv := httpapi.NewServer(cfg, database, logger)
-		logger.Info("starting app", "addr", cfg.HTTPAddr)
+		sealer, err := httpapi.RequireSessionSecret(cfg)
+		if err != nil {
+			return err
+		}
+		oidc, err := httpapi.BuildOIDC(ctx, cfg, logger)
+		if err != nil {
+			return fmt.Errorf("oidc: %w", err)
+		}
+		srv, err := httpapi.NewServer(cfg, database, logger, oidc, sealer)
+		if err != nil {
+			return fmt.Errorf("server: %w", err)
+		}
+		logger.Info("starting app", "addr", cfg.HTTPAddr, "public_base_url", cfg.PublicBaseURL)
 		return srv.ListenAndServe(ctx)
 	case "worker":
 		w := jobs.NewWorker(cfg, database, logger)
 		logger.Info("starting worker")
 		return w.Run(ctx)
-	case "version":
-		fmt.Println("kinframe scaffold")
-		return nil
 	default:
 		return fmt.Errorf("unknown command %q (want app|worker|version)", cmd)
 	}
