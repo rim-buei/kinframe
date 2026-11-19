@@ -30,32 +30,27 @@ var albumPageTmpl = template.Must(template.New("album").Parse(`<!DOCTYPE html>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{.Album.Title}} · kinframe</title>
   <link rel="stylesheet" href="/themes/default/static/styles.css">
-  <style>
-    main { max-width: 52rem; margin: 0 auto; padding: 2.5rem 1.25rem; }
-    nav { margin-bottom: 1.5rem; color: var(--muted); }
-    h1 { margin: 0 0 0.35rem; }
-    .meta { color: var(--muted); margin-bottom: 1.5rem; }
-    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr)); gap: 0.75rem; }
-    figure { margin: 0; }
-    figure img { width: 100%; aspect-ratio: 1; object-fit: cover; display: block; background: #dfe8e3; }
-    figcaption { font-size: 0.8rem; color: var(--muted); margin-top: 0.25rem; }
-    form.upload { margin: 1.25rem 0 2rem; display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
-    button, .btn { padding: 0.5rem 0.75rem; border: 1px solid var(--accent); background: var(--accent); color: #fff; cursor: pointer; }
-    button.danger { background: transparent; color: #8b2e2e; border-color: #c9a0a0; }
-    .err { color: #8b2e2e; }
-    .ok { color: #2f5d50; }
-  </style>
 </head>
 <body>
-<main>
-  <nav><a href="/spaces/{{.SpaceSlug}}">← {{.SpaceName}}</a> · {{.DisplayName}} · <a href="/auth/logout">Log out</a></nav>
-  <h1>{{.Album.Title}}</h1>
-  <p class="meta">state <strong>{{.StateLabel}}</strong> ({{.Album.ArchiveState}}){{if .Album.Description}} · {{.Album.Description}}{{end}}</p>
-  {{if .Flash}}<p class="ok">{{.Flash}}</p>{{end}}
-  {{if .Error}}<p class="err">{{.Error}}</p>{{end}}
+<main class="shell shell-wide">
+  <header class="topbar">
+    <a class="brand-lockup" href="/">kinframe</a>
+    <div class="topbar-meta">
+      <a class="crumb" href="/spaces/{{.SpaceSlug}}">{{.SpaceName}}</a>
+      <span>{{.DisplayName}}</span>
+      <a href="/auth/logout">Log out</a>
+    </div>
+  </header>
+  <h1 class="page-title">{{.Album.Title}}</h1>
+  <p class="meta">
+    <span class="state state-{{.Album.ArchiveState}}">{{.StateLabel}}</span>
+    {{if .Album.Description}} · {{.Album.Description}}{{end}}
+  </p>
+  {{if .Flash}}<p class="flash">{{.Flash}}</p>{{end}}
+  {{if .Error}}<p class="flash flash-err" role="alert">{{.Error}}</p>{{end}}
 
   {{if .CanArchive}}
-  <div style="margin:0 0 1.25rem;display:flex;gap:0.5rem;flex-wrap:wrap">
+  <div class="archive-bar">
     {{if eq .Album.ArchiveState "hot"}}
     <form method="post" action="/albums/{{.Album.ID}}/archive"><button type="submit">Archive to Glacier</button></form>
     {{end}}
@@ -63,26 +58,27 @@ var albumPageTmpl = template.Must(template.New("album").Parse(`<!DOCTYPE html>
     <form method="post" action="/albums/{{.Album.ID}}/restore"><button type="submit">Restore from Glacier</button></form>
     {{end}}
     {{if or (eq .Album.ArchiveState "archiving") (eq .Album.ArchiveState "restoring")}}
-    <p class="meta">Job in progress… refresh for updates. Thumbnails stay available.</p>
+    <p class="archive-hint">Job in progress… refresh for updates. Thumbnails stay available.</p>
     {{end}}
   </div>
   {{end}}
 
   {{if and .CanEdit (eq .Album.ArchiveState "hot")}}
-  <form class="upload" method="post" action="/albums/{{.Album.ID}}/upload" enctype="multipart/form-data">
-    <input type="file" name="file" accept="image/*,video/*" required>
+  <form class="stack upload-panel" method="post" action="/albums/{{.Album.ID}}/upload" enctype="multipart/form-data">
+    <input type="file" name="file" accept="image/*,video/*" required aria-label="Choose photo or video">
     <button type="submit">Upload</button>
   </form>
   {{end}}
 
   {{if .Media}}
-  <div class="grid">
+  <div class="media-grid">
     {{range .Media}}
-    <figure>
+    <figure class="media-item">
       <a href="/api/media/{{.ID}}/file?kind=preview"><img src="/api/media/{{.ID}}/file?kind=thumb" alt=""></a>
-      <figcaption>{{.Kind}} · {{.ByteSize}} B
+      <figcaption>
+        <span>{{.Kind}} · {{.ByteSize}} B</span>
         {{if $.CanEdit}}
-        <form method="post" action="/albums/{{$.Album.ID}}/media/{{.ID}}/delete" style="display:inline">
+        <form class="inline" method="post" action="/albums/{{$.Album.ID}}/media/{{.ID}}/delete">
           <button class="danger" type="submit">Delete</button>
         </form>
         {{end}}
@@ -91,13 +87,15 @@ var albumPageTmpl = template.Must(template.New("album").Parse(`<!DOCTYPE html>
     {{end}}
   </div>
   {{else}}
-  <p class="meta">No media yet.</p>
+  <p class="empty">No media yet.</p>
   {{end}}
 
   {{if .CanEdit}}
-  <form method="post" action="/albums/{{.Album.ID}}/delete" style="margin-top:2rem" onsubmit="return confirm('Delete this album?')">
-    <button class="danger" type="submit">Delete album</button>
-  </form>
+  <div class="danger-zone">
+    <form method="post" action="/albums/{{.Album.ID}}/delete" onsubmit="return confirm('Delete this album?')">
+      <button class="danger" type="submit">Delete album</button>
+    </form>
+  </div>
   {{end}}
 </main>
 </body>

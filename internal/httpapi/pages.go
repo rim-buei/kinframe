@@ -11,133 +11,125 @@ import (
 	"github.com/rim-buei/kinframe/internal/space"
 )
 
-var spacesHomeTmpl = template.Must(template.New("spaces").Parse(`<!DOCTYPE html>
+var pageFuncs = template.FuncMap{
+	"archiveLabel": archiveStateLabel,
+}
+
+var spacesHomeTmpl = template.Must(template.New("spaces").Funcs(pageFuncs).Parse(`<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Spaces · kinframe</title>
   <link rel="stylesheet" href="/themes/default/static/styles.css">
-  <style>
-    main { max-width: 40rem; margin: 0 auto; padding: 2.5rem 1.25rem; }
-    nav { display: flex; justify-content: space-between; gap: 1rem; margin-bottom: 2rem; color: var(--muted); font-size: 0.95rem; }
-    h1 { font-size: 1.75rem; margin: 0 0 1rem; }
-    ul { list-style: none; padding: 0; margin: 0 0 2rem; }
-    li { padding: 0.65rem 0; border-bottom: 1px solid #d5ddd8; }
-    li a { text-decoration: none; color: var(--fg); font-weight: 600; }
-    .role { color: var(--muted); font-weight: 400; font-size: 0.9rem; margin-left: 0.5rem; }
-    form.create { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 2rem; }
-    input[type=text] { flex: 1; min-width: 12rem; padding: 0.6rem 0.7rem; border: 1px solid #c5d0cb; background: rgba(255,255,255,0.7); }
-    button, .btn { padding: 0.6rem 0.9rem; border: 1px solid var(--accent); background: var(--accent); color: #fff; cursor: pointer; text-decoration: none; display: inline-block; }
-    .muted { color: var(--muted); }
-    .err { color: #8b2e2e; }
-  </style>
 </head>
 <body>
-<main>
-  <nav>
-    <span><strong>kinframe</strong></span>
-    <span>{{.DisplayName}} · <a href="/auth/logout">Log out</a></span>
-  </nav>
-  <h1>Your spaces</h1>
-  {{if .Error}}<p class="err">{{.Error}}</p>{{end}}
-  <form class="create" method="post" action="/spaces">
-    <input type="text" name="name" placeholder="New space name" required>
-    <button type="submit">Create</button>
+<main class="shell">
+  <header class="topbar">
+    <a class="brand-lockup" href="/">kinframe</a>
+    <div class="topbar-meta">
+      <span>{{.DisplayName}}</span>
+      <a href="/auth/logout">Log out</a>
+    </div>
+  </header>
+  <h1 class="page-title">Your spaces</h1>
+  <p class="page-lead">Shared places for family albums.</p>
+  {{if .Error}}<p class="flash flash-err" role="alert">{{.Error}}</p>{{end}}
+  <form class="stack" method="post" action="/spaces">
+    <input type="text" name="name" placeholder="New space name" required aria-label="New space name">
+    <button type="submit">Create space</button>
   </form>
   {{if .Spaces}}
-  <ul>
+  <ul class="list">
     {{range .Spaces}}
-    <li><a href="/spaces/{{.Space.Slug}}">{{.Space.Name}}</a><span class="role">{{.Role}}</span></li>
+    <li class="list-item">
+      <a href="/spaces/{{.Space.Slug}}">{{.Space.Name}}</a>
+      <span class="role-tag">{{.Role}}</span>
+    </li>
     {{end}}
   </ul>
   {{else}}
-  <p class="muted">No spaces yet. Create one to invite family.</p>
+  <p class="empty">No spaces yet. Create one to invite family.</p>
   {{end}}
 </main>
 </body>
 </html>`))
 
-var spaceDetailTmpl = template.Must(template.New("space").Parse(`<!DOCTYPE html>
+var spaceDetailTmpl = template.Must(template.New("space").Funcs(pageFuncs).Parse(`<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{.Space.Name}} · kinframe</title>
   <link rel="stylesheet" href="/themes/default/static/styles.css">
-  <style>
-    main { max-width: 42rem; margin: 0 auto; padding: 2.5rem 1.25rem; }
-    nav { margin-bottom: 1.5rem; color: var(--muted); }
-    h1 { margin: 0 0 0.25rem; }
-    .meta { color: var(--muted); margin-bottom: 1.75rem; }
-    h2 { font-size: 1.1rem; margin: 1.75rem 0 0.75rem; }
-    table { width: 100%; border-collapse: collapse; font-size: 0.95rem; }
-    td, th { text-align: left; padding: 0.45rem 0.35rem; border-bottom: 1px solid #d5ddd8; }
-    form.inline { display: inline-flex; gap: 0.35rem; align-items: center; flex-wrap: wrap; }
-    input, select, button { padding: 0.45rem 0.55rem; border: 1px solid #c5d0cb; background: rgba(255,255,255,0.7); }
-    button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
-    .token { word-break: break-all; font-family: ui-monospace, monospace; font-size: 0.85rem; }
-    .ok { color: #2f5d50; }
-    .err { color: #8b2e2e; }
-  </style>
 </head>
 <body>
-<main>
-  <nav><a href="/">← Spaces</a> · {{.DisplayName}} · <a href="/auth/logout">Log out</a></nav>
-  <h1>{{.Space.Name}}</h1>
+<main class="shell">
+  <header class="topbar">
+    <a class="brand-lockup" href="/">kinframe</a>
+    <div class="topbar-meta">
+      <a class="crumb" href="/">Spaces</a>
+      <span>{{.DisplayName}}</span>
+      <a href="/auth/logout">Log out</a>
+    </div>
+  </header>
+  <h1 class="page-title">{{.Space.Name}}</h1>
   <p class="meta">slug <code>{{.Space.Slug}}</code> · your role <strong>{{.Role}}</strong></p>
-  {{if .Flash}}<p class="ok">{{.Flash}}</p>{{end}}
-  {{if .Error}}<p class="err">{{.Error}}</p>{{end}}
+  {{if .Flash}}<p class="flash">{{.Flash}}</p>{{end}}
+  {{if .Error}}<p class="flash flash-err" role="alert">{{.Error}}</p>{{end}}
 
-  <h2>Albums</h2>
+  <h2 class="section-title">Albums</h2>
   {{if .CanEdit}}
-  <form class="inline" method="post" action="/spaces/{{.Space.Slug}}/albums" style="margin-bottom:1rem">
-    <input type="text" name="title" placeholder="New album title" required>
-    <button class="primary" type="submit">Create album</button>
+  <form class="stack" method="post" action="/spaces/{{.Space.Slug}}/albums">
+    <input type="text" name="title" placeholder="New album title" required aria-label="New album title">
+    <button type="submit">Create album</button>
   </form>
   {{end}}
   {{if .Albums}}
-  <ul style="list-style:none;padding:0;margin:0 0 1.5rem">
+  <ul class="list">
     {{range .Albums}}
-    <li style="padding:0.4rem 0;border-bottom:1px solid #d5ddd8">
+    <li class="list-item">
       <a href="/albums/{{.ID}}">{{.Title}}</a>
-      <span style="color:var(--muted);font-size:0.85rem;margin-left:0.5rem">{{.ArchiveState}}</span>
+      <span class="state state-{{.ArchiveState}}">{{archiveLabel .ArchiveState}}</span>
     </li>
     {{end}}
   </ul>
   {{else}}
-  <p style="color:var(--muted)">No albums yet.</p>
+  <p class="empty">No albums yet.</p>
   {{end}}
 
-  <h2>Members</h2>
-  <table>
-    <tr><th>Name</th><th>Email</th><th>Role</th></tr>
+  <h2 class="section-title">Members</h2>
+  <table class="table">
+    <thead><tr><th>Name</th><th>Email</th><th>Role</th></tr></thead>
+    <tbody>
     {{range .Members}}
     <tr><td>{{.DisplayName}}</td><td>{{.Email}}</td><td>{{.Role}}</td></tr>
     {{end}}
+    </tbody>
   </table>
 
   {{if .CanInvite}}
-  <h2>Invite link</h2>
-  <form class="inline" method="post" action="/spaces/{{.Space.Slug}}/invites">
-    <label>Role
+  <h2 class="section-title">Invite link</h2>
+  <form class="stack" method="post" action="/spaces/{{.Space.Slug}}/invites">
+    <label class="field">Role
       <select name="role">
         <option value="viewer">viewer</option>
         <option value="editor">editor</option>
         <option value="admin">admin</option>
       </select>
     </label>
-    <button class="primary" type="submit">Create invite</button>
+    <button type="submit">Create invite</button>
   </form>
   {{if .NewInviteURL}}
-  <p>Share this link (shown once):</p>
+  <p class="meta">Share this link (shown once):</p>
   <p class="token"><a href="{{.NewInviteURL}}">{{.NewInviteURL}}</a></p>
   {{end}}
 
   {{if .Invites}}
-  <h2>Invites</h2>
-  <table>
-    <tr><th>Role</th><th>Uses</th><th>Status</th><th></th></tr>
+  <h2 class="section-title">Invites</h2>
+  <table class="table">
+    <thead><tr><th>Role</th><th>Uses</th><th>Status</th><th></th></tr></thead>
+    <tbody>
     {{range .Invites}}
     <tr>
       <td>{{.DefaultRole}}</td>
@@ -146,12 +138,13 @@ var spaceDetailTmpl = template.Must(template.New("space").Parse(`<!DOCTYPE html>
       <td>
         {{if not .RevokedAt}}
         <form method="post" action="/spaces/{{$.Space.Slug}}/invites/{{.ID}}/revoke">
-          <button type="submit">Revoke</button>
+          <button class="ghost" type="submit">Revoke</button>
         </form>
         {{end}}
       </td>
     </tr>
     {{end}}
+    </tbody>
   </table>
   {{end}}
   {{end}}
@@ -166,28 +159,20 @@ var invitePageTmpl = template.Must(template.New("invite").Parse(`<!DOCTYPE html>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Join {{.SpaceName}} · kinframe</title>
   <link rel="stylesheet" href="/themes/default/static/styles.css">
-  <style>
-    main { max-width: 28rem; margin: 0 auto; padding: 4rem 1.25rem; }
-    h1 { font-size: 1.75rem; margin: 0 0 0.5rem; }
-    .muted { color: var(--muted); }
-    button { margin-top: 1.25rem; padding: 0.75rem 1rem; border: 1px solid var(--accent); background: var(--accent); color: #fff; cursor: pointer; width: 100%; }
-    .err { color: #8b2e2e; }
-    a.btn { display: block; text-align: center; margin-top: 1rem; padding: 0.75rem; border: 1px solid #c5d0cb; text-decoration: none; color: var(--fg); }
-  </style>
 </head>
 <body>
-<main>
-  <p class="muted">kinframe invite</p>
-  <h1>Join {{.SpaceName}}</h1>
-  <p class="muted">You will join as <strong>{{.Role}}</strong>.</p>
-  {{if .Error}}<p class="err">{{.Error}}</p>{{end}}
+<main class="shell shell-narrow">
+  <p class="invite-kicker">kinframe</p>
+  <h1 class="page-title">Join {{.SpaceName}}</h1>
+  <p class="page-lead">You will join as <strong>{{.Role}}</strong>.</p>
+  {{if .Error}}<p class="flash flash-err" role="alert">{{.Error}}</p>{{end}}
   {{if .LoggedIn}}
   <form method="post" action="/invite/{{.Token}}/accept">
-    <button type="submit">Accept invite</button>
+    <button class="btn-block" type="submit">Accept invite</button>
   </form>
   {{else}}
   <p class="muted">Sign in first, then return to this link.</p>
-  <a class="btn" href="/login?return_to={{.ReturnTo}}">Sign in</a>
+  <a class="btn btn-block" href="/login?return_to={{.ReturnTo}}">Sign in</a>
   {{end}}
 </main>
 </body>
