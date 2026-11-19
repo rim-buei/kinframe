@@ -1,0 +1,23 @@
+/* Default theme — css-only pack. Base Liquid templates ship with the app later. */
+:root {
+  --bg: #f7f6f2;
+  --fg: #1a1a1a;
+  --accent: #2f5d50;
+  --muted: #5c5c5c;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  background: linear-gradient(160deg, #f7f6f2 0%, #e8eee9 55%, #dfe8e3 100%);
+  color: var(--fg);
+  min-height: 100vh;
+}
+
+a {
+  color: var(--accent);
+}

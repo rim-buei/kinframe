@@ -1,0 +1,11 @@
+.git
+.env
+data
+*.db
+*.db-*
+*.heartbeat
+bin
+dist
+kinframe
+README.md
+**/*_test.go
