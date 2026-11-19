@@ -1,10 +1,10 @@
 # kinframe
 
-Self-hosted family photo sharing. Spaces, albums, and media with optional **album-level Glacier archive/restore**, SSO (Google / Apple), and community **theme packs**.
+Self-hosted family photo sharing. Spaces, albums, and media with optional album-level Glacier archive/restore, SSO (Google / Apple), and community theme packs.
 
-This repository is early MVP: SQLite, Docker Compose (Caddy + app + worker), **Google / Apple OIDC + encrypted cookie sessions**, **Spaces / memberships / invite links**, **albums + media upload**, and **album-level Glacier archive/restore** (filesystem simulates archive for local smoke; S3 uses Flexible Retrieval).
+This repository is early MVP: SQLite, Docker Compose (Caddy + app + worker), Google / Apple OIDC + encrypted cookie sessions, Spaces / memberships / invite links, albums + media upload, and album-level Glacier archive/restore (filesystem simulates archive for local smoke; S3 uses Flexible Retrieval).
 
-## Stack (approved)
+## Tech Stack
 
 | Layer | Choice |
 |-------|--------|
@@ -12,7 +12,7 @@ This repository is early MVP: SQLite, Docker Compose (Caddy + app + worker), **G
 | HTTP | chi |
 | DB | SQLite (WAL) + goose migrations |
 | Proxy | Caddy |
-| Storage | `ObjectStore` — local **filesystem** (archive simulated) or **S3** (Glacier Flexible Retrieval) |
+| Storage | `ObjectStore` — local filesystem (archive simulated) or S3 (Glacier Flexible Retrieval) |
 | Jobs | SQLite `jobs` + worker (`album_archive` / `album_restore`) |
 | Auth | OIDC (Google / Apple) + encrypted HTTP-only cookie sessions |
 | Themes | Packs under `themes/` (Liquid / css-only) |
@@ -32,9 +32,9 @@ curl -fsS http://localhost:8080/healthz
 
 Services:
 
-- **caddy** — reverse proxy on host port `8080`
-- **app** — HTTP + login; runs migrations on start
-- **worker** — polls `jobs` (archive/restore execution is TODO)
+- caddy — reverse proxy on host port `8080`
+- app — HTTP + login; runs migrations on start
+- worker — polls `jobs` (archive/restore execution is TODO)
 
 ## Auth configuration
 
