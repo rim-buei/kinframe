@@ -89,6 +89,26 @@ var spaceDetailTmpl = template.Must(template.New("space").Parse(`<!DOCTYPE html>
   {{if .Flash}}<p class="ok">{{.Flash}}</p>{{end}}
   {{if .Error}}<p class="err">{{.Error}}</p>{{end}}
 
+  <h2>Albums</h2>
+  {{if .CanEdit}}
+  <form class="inline" method="post" action="/spaces/{{.Space.Slug}}/albums" style="margin-bottom:1rem">
+    <input type="text" name="title" placeholder="New album title" required>
+    <button class="primary" type="submit">Create album</button>
+  </form>
+  {{end}}
+  {{if .Albums}}
+  <ul style="list-style:none;padding:0;margin:0 0 1.5rem">
+    {{range .Albums}}
+    <li style="padding:0.4rem 0;border-bottom:1px solid #d5ddd8">
+      <a href="/albums/{{.ID}}">{{.Title}}</a>
+      <span style="color:var(--muted);font-size:0.85rem;margin-left:0.5rem">{{.ArchiveState}}</span>
+    </li>
+    {{end}}
+  </ul>
+  {{else}}
+  <p style="color:var(--muted)">No albums yet.</p>
+  {{end}}
+
   <h2>Members</h2>
   <table>
     <tr><th>Name</th><th>Email</th><th>Role</th></tr>
@@ -220,6 +240,7 @@ func (s *Server) handleSpacePage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	members, _ := s.spaces.ListMembers(r.Context(), sp.ID)
+	albums, _ := s.media.ListAlbums(r.Context(), sp.ID)
 	var invites []space.InviteLink
 	canInvite := m.Role.CanCreateInvite()
 	if canInvite {
@@ -233,12 +254,34 @@ func (s *Server) handleSpacePage(w http.ResponseWriter, r *http.Request) {
 		"Space":        sp,
 		"Role":         m.Role,
 		"Members":      members,
+		"Albums":       albums,
+		"CanEdit":      m.Role.CanEditContent(),
 		"CanInvite":    canInvite,
 		"Invites":      invites,
 		"NewInviteURL": newURL,
 		"Flash":        flash,
 		"Error":        r.URL.Query().Get("error"),
 	})
+}
+
+func (s *Server) handleSpaceCreateAlbumForm(w http.ResponseWriter, r *http.Request) {
+	a, ok := auth.AccountFromContext(r.Context())
+	if !ok {
+		http.Redirect(w, r, "/login", http.StatusFound)
+		return
+	}
+	slug := chi.URLParam(r, "spaceID")
+	sp, _, err := s.spaces.RequireMembership(r.Context(), slug, a.ID, space.RoleEditor)
+	if err != nil {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	al, err := s.media.CreateAlbum(r.Context(), sp.ID, r.FormValue("title"), r.FormValue("description"), a.ID)
+	if err != nil {
+		http.Redirect(w, r, "/spaces/"+sp.Slug+"?error="+url.QueryEscape(err.Error()), http.StatusFound)
+		return
+	}
+	http.Redirect(w, r, "/albums/"+al.ID, http.StatusFound)
 }
 
 func (s *Server) handleSpaceCreateInviteForm(w http.ResponseWriter, r *http.Request) {

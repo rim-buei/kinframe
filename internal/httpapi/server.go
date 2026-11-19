@@ -17,7 +17,9 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/rim-buei/kinframe/internal/auth"
 	"github.com/rim-buei/kinframe/internal/config"
+	"github.com/rim-buei/kinframe/internal/media"
 	"github.com/rim-buei/kinframe/internal/space"
+	"github.com/rim-buei/kinframe/internal/storage"
 )
 
 // Server is the HTTP app.
@@ -30,17 +32,21 @@ type Server struct {
 	sessions *auth.SessionManager
 	oidc     auth.OIDCClient
 	spaces   *space.Store
+	media    *media.Store
+	objects  storage.ObjectStore
 }
 
-// NewServer builds a chi router with health, auth, spaces, and API routes.
-func NewServer(cfg config.Config, db *sql.DB, logger *slog.Logger, oidc auth.OIDCClient, sealer *auth.Sealer) (*Server, error) {
+// NewServer builds a chi router with health, auth, spaces, albums, and media routes.
+func NewServer(cfg config.Config, db *sql.DB, logger *slog.Logger, oidc auth.OIDCClient, sealer *auth.Sealer, objects storage.ObjectStore) (*Server, error) {
 	s := &Server{
-		cfg:    cfg,
-		db:     db,
-		logger: logger,
-		oidc:   oidc,
-		sealer: sealer,
-		spaces: space.NewStore(db),
+		cfg:     cfg,
+		db:      db,
+		logger:  logger,
+		oidc:    oidc,
+		sealer:  sealer,
+		spaces:  space.NewStore(db),
+		media:   media.NewStore(db, objects, cfg.MaxUploadBytes),
+		objects: objects,
 	}
 	if sealer != nil {
 		s.sessions = auth.NewSessionManager(db, sealer, cfg.SessionTTL, cfg.CookieSecure())
@@ -50,7 +56,7 @@ func NewServer(cfg config.Config, db *sql.DB, logger *slog.Logger, oidc auth.OID
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Recoverer)
-	r.Use(middleware.Timeout(60 * time.Second))
+	r.Use(middleware.Timeout(120 * time.Second))
 	if s.sessions != nil {
 		r.Use(auth.Middleware(s.sessions))
 	}
@@ -62,6 +68,12 @@ func NewServer(cfg config.Config, db *sql.DB, logger *slog.Logger, oidc auth.OID
 	r.Get("/spaces/{spaceID}", s.handleSpacePage)
 	r.Post("/spaces/{spaceID}/invites", s.handleSpaceCreateInviteForm)
 	r.Post("/spaces/{spaceID}/invites/{inviteID}/revoke", s.handleSpaceRevokeInviteForm)
+	r.Post("/spaces/{spaceID}/albums", s.handleSpaceCreateAlbumForm)
+
+	r.Get("/albums/{albumID}", s.handleAlbumPage)
+	r.Post("/albums/{albumID}/upload", s.handleAlbumUploadForm)
+	r.Post("/albums/{albumID}/media/{mediaID}/delete", s.handleAlbumDeleteMediaForm)
+	r.Post("/albums/{albumID}/delete", s.handleAlbumDeleteForm)
 
 	r.Get("/invite/{token}", s.handleInvitePage)
 	r.Post("/invite/{token}/accept", s.handleInviteAcceptForm)
@@ -95,7 +107,15 @@ func NewServer(cfg config.Config, db *sql.DB, logger *slog.Logger, oidc auth.OID
 
 		r.Post("/invites/accept", s.handleAcceptInviteAPI)
 
-		r.Get("/albums", s.notImplemented("list albums"))
+		r.Get("/spaces/{spaceID}/albums", s.handleListAlbums)
+		r.Post("/spaces/{spaceID}/albums", s.handleCreateAlbum)
+		r.Get("/albums/{albumID}", s.handleGetAlbum)
+		r.Patch("/albums/{albumID}", s.handleUpdateAlbum)
+		r.Delete("/albums/{albumID}", s.handleDeleteAlbum)
+		r.Get("/albums/{albumID}/media", s.handleListMedia)
+		r.Post("/albums/{albumID}/media", s.handleUploadMedia)
+		r.Delete("/media/{mediaID}", s.handleDeleteMedia)
+		r.Get("/media/{mediaID}/file", s.handleMediaFile)
 	})
 
 	s.http = &http.Server{
@@ -141,7 +161,7 @@ func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleAPIRoot(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"name":    "kinframe",
-		"version": "0.2.0-spaces",
+		"version": "0.3.0-media",
 		"auth": map[string]bool{
 			"google": s.oidc != nil && s.oidc.Configured(auth.ProviderGoogle),
 			"apple":  s.oidc != nil && s.oidc.Configured(auth.ProviderApple),

@@ -2,7 +2,7 @@
 
 Self-hosted family photo sharing. Spaces, albums, and media with optional **album-level Glacier archive/restore**, SSO (Google / Apple), and community **theme packs**.
 
-This repository is early MVP: SQLite, Docker Compose (Caddy + app + worker), **Google / Apple OIDC + encrypted cookie sessions**, **Spaces / memberships / invite links**, and stubs for S3 / Glacier jobs.
+This repository is early MVP: SQLite, Docker Compose (Caddy + app + worker), **Google / Apple OIDC + encrypted cookie sessions**, **Spaces / memberships / invite links**, **albums + media upload** (filesystem object store for local/dev), and Glacier job stubs (not wired yet).
 
 ## Stack (approved)
 
@@ -12,7 +12,7 @@ This repository is early MVP: SQLite, Docker Compose (Caddy + app + worker), **G
 | HTTP | chi |
 | DB | SQLite (WAL) + goose migrations |
 | Proxy | Caddy |
-| Storage | S3 interface (stub); Glacier via worker jobs (sketched) |
+| Storage | `ObjectStore` — local **filesystem** backend for dev; S3 SDK later; Glacier via worker jobs (sketched) |
 | Auth | OIDC (Google / Apple) + encrypted HTTP-only cookie sessions |
 | Themes | Packs under `themes/` (Liquid / css-only) |
 
@@ -47,38 +47,44 @@ Services:
 | `APPLE_CLIENT_SECRET` | Pre-built Apple client_secret JWT **or** |
 | `APPLE_TEAM_ID` / `APPLE_KEY_ID` / `APPLE_PRIVATE_KEY` | Material to mint the Apple client_secret |
 | `DEV_FAKE_OIDC` | `1` enables a local-only "Dev login" button |
+| `STORAGE_BACKEND` | `fs` (default local), `stub`, or `s3` (not implemented yet) |
+| `STORAGE_PATH` | Filesystem root for originals/thumbs/previews (default `./data/objects`) |
+| `MAX_UPLOAD_BYTES` | Per-file limit (default 104857600 = 100MiB) |
 
 Register these redirect URIs with the IdP:
 
 - `{PUBLIC_BASE_URL}/auth/callback/google`
 - `{PUBLIC_BASE_URL}/auth/callback/apple`
 
-Routes: `/login`, `/auth/login/{provider}`, `/auth/callback/{provider}`, `/auth/logout`, `/`, `/spaces/{slug}`, `/invite/{token}`, `/api/me`, `/api/spaces`, …
+Routes: `/login`, auth callbacks, `/`, `/spaces/{slug}`, `/albums/{id}`, `/invite/{token}`, `/api/me`, `/api/spaces…`, `/api/albums…`, `/api/media…`.
 
 ### Smoke test without Google/Apple
 
 ```bash
 export SESSION_SECRET=dev-only-secret
 export DEV_FAKE_OIDC=1
+export STORAGE_BACKEND=fs
+export STORAGE_PATH=./data/objects
 export DATABASE_PATH=./data/app.db
 export THEMES_DIR=./themes
 export PUBLIC_BASE_URL=http://localhost:8080
 go run ./cmd/kinframe app
-# 1) /login → Dev login → create a space → Create invite
-# 2) Log out → Dev login as guest → open invite URL → Accept
-# 3) Or: curl API with session cookie after fake login
+# 1) /login → Dev login → create a space → create album → upload a JPEG → delete
+# 2) Optional: Dev login as guest + invite accept (memberships smoke)
 ```
 
-Unit tests (no IdP credentials):
+Unit tests (no IdP / AWS credentials):
 
 ```bash
-go test ./internal/auth/... ./internal/space/...
+go test ./internal/auth/... ./internal/space/... ./internal/media/... ./internal/storage/...
 ```
 
 ## Run locally without Compose
 
 ```bash
 export SESSION_SECRET=dev-only-secret
+export STORAGE_BACKEND=fs
+export STORAGE_PATH=./data/objects
 export DATABASE_PATH=./data/app.db
 export THEMES_DIR=./themes
 export PUBLIC_BASE_URL=http://localhost:8080

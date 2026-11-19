@@ -73,3 +73,8 @@ func (r Role) CanDeleteSpace() bool {
 func (r Role) CanCreateInvite() bool {
 	return r.AtLeast(RoleAdmin)
 }
+
+// CanEditContent is true for owner, admin, and editor (albums / media).
+func (r Role) CanEditContent() bool {
+	return r.AtLeast(RoleEditor)
+}

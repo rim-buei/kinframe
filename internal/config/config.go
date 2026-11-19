@@ -21,6 +21,10 @@ type Config struct {
 	SessionSecret string
 	SessionTTL    time.Duration
 
+	// Object storage: fs (local) or s3 (not wired yet). See STORAGE_BACKEND.
+	StorageBackend string
+	StoragePath    string // filesystem root when backend=fs
+
 	// S3 / Glacier (stubbed; values accepted for Compose wiring).
 	S3Endpoint          string
 	S3Region            string
@@ -57,6 +61,8 @@ func Load() (Config, error) {
 		ThemesDir:           getenv("THEMES_DIR", "/themes"),
 		SessionSecret:       os.Getenv("SESSION_SECRET"),
 		SessionTTL:          time.Duration(ttlHours) * time.Hour,
+		StorageBackend:      os.Getenv("STORAGE_BACKEND"),
+		StoragePath:         getenv("STORAGE_PATH", "./data/objects"),
 		S3Endpoint:          os.Getenv("S3_ENDPOINT"),
 		S3Region:            getenv("S3_REGION", "us-east-1"),
 		S3Bucket:            os.Getenv("S3_BUCKET"),
